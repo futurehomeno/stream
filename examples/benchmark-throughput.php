@@ -14,17 +14,16 @@ $of = str_replace('/dev/fd/', 'php://fd/', $of);
 $loop = new React\EventLoop\StreamSelectLoop();
 
 // setup information stream
-$info = new React\Stream\Stream(STDERR, $loop);
-$info->pause();
+$info = new React\Stream\WritableResourceStream(STDERR, $loop);
 if (extension_loaded('xdebug')) {
     $info->write('NOTICE: The "xdebug" extension is loaded, this has a major impact on performance.' . PHP_EOL);
 }
 $info->write('piping from ' . $if . ' to ' . $of . ' (for max ' . $t . ' second(s)) ...'. PHP_EOL);
 
 // setup input and output streams and pipe inbetween
-$in = new React\Stream\Stream(fopen($if, 'r'), $loop);
-$out = new React\Stream\Stream(fopen($of, 'w'), $loop);
-$out->pause();
+$fh = fopen($if, 'r');
+$in = new React\Stream\ReadableResourceStream($fh, $loop);
+$out = new React\Stream\WritableResourceStream(fopen($of, 'w'), $loop);
 $in->pipe($out);
 
 // stop input stream in $t seconds
@@ -34,11 +33,11 @@ $timeout = $loop->addTimer($t, function () use ($in, &$bytes) {
 });
 
 // print stream position once stream closes
-$in->on('close', function () use ($in, $start, $timeout, $info) {
+$in->on('close', function () use ($fh, $start, $timeout, $info) {
     $t = microtime(true) - $start;
     $timeout->cancel();
 
-    $bytes = ftell($in->stream);
+    $bytes = ftell($fh);
 
     $info->write('read ' . $bytes . ' byte(s) in ' . round($t, 3) . ' second(s) => ' . round($bytes / 1024 / 1024 / $t, 1) . ' MiB/s' . PHP_EOL);
     $info->write('peak memory usage of ' . round(memory_get_peak_usage(true) / 1024 / 1024, 1) . ' MiB' . PHP_EOL);
